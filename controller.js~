@@ -17,6 +17,7 @@
 var config = require('./config-wrapper.js')();
 var async = require('async');
 var noble = require('noble');
+var mqtt = require('mqtt');
 var readline = require('readline');
 
 var receivedMessages = require('./receivedMessages.js')();
@@ -29,41 +30,81 @@ var lane;
 
 var MAGIC_NUMBER_1 = "be15beef6186407e83810bd89c4d8df4"; //Discover
 
+noble.on('scanStart', function() {
+  console.log('on -> scanStart');
+});
+
+noble.on('stateChange', function(state) {
+  if (state === 'poweredOn') {
+    noble.startScanning();
+
+    setTimeout(function() {
+       noble.stopScanning();
+       process.exit(0);
+     }, 2000);
+  } else {
+    noble.stopScanning();
+  }
+});
 
 
+
+config.read(process.argv[2], function(carId, startlane, mqttClient) {
+  if (!carId) {
+    console.log('Define carid in a properties file and pass in the name of the file as argv');
+    process.exit(0);
+  }
+  lane = startlane;
+  console.log(carId);
+  console.log(startlane);
+  //	noble.startScanning();
+  /*setTimeout(function() {
+    noble.stopScanning();
+  }, 2000);*/
+
+  noble.on('discover', function(peripheral) {
+    console.log(JSON.stringify(peripheral));
+    if (peripheral.id === carId) {
+      
+      noble.stopScanning();
+
+      var advertisement = peripheral.advertisement;
+      var serviceUuids = JSON.stringify(peripheral.advertisement.serviceUuids);
+      
+      if(serviceUuids.indexOf(MAGIC_NUMBER_1) > -1) {
+        console.log('Car discovered. ID: ' + peripheral.id); 
+        car = peripheral;
+        setUp(car);
+      }
+    }
+  });
 
   function setUp(peripheral) {
-/*
-    peripheral.on('disconnect', function(error) {
+    peripheral.on('disconnect', function() {
       console.log('Car has been disconnected');
       process.exit(0);
     });
-*/
 
     peripheral.connect(function(error) {
-      console.log('Whoah!')
       peripheral.discoverServices([], function(error, services) {
-
         var service = services[0];
-        console.log(service);
+        
         service.discoverCharacteristics([], function(error, characteristics) {
           var characteristicIndex = 0;
-          console.log('charac' + JSON.stringify(characteristics));
+
           async.whilst(
             function () {
               return (characteristicIndex < characteristics.length);
             },
             function(callback) {
               var characteristic = characteristics[characteristicIndex];
-              console.log('current characteristic : ' + JSON.stringify(characteristic));
-
               async.series([
                 function(callback) {
+		console.log('current characteristic : ' + JSON.stringify(characteristic));
                   if (characteristic.uuid == MAGIC_NUMBER_1 ) {
                     readCharacteristic = characteristic;
 
                     readCharacteristic.notify(true, function(err) {
-                      console.log('Could not read characteristic');
                     });
 
                     characteristic.on('read', function(data, isNotification) {
@@ -75,8 +116,8 @@ var MAGIC_NUMBER_1 = "be15beef6186407e83810bd89c4d8df4"; //Discover
                     writeCharacteristic = characteristic;
 
                     init(startlane);
-    
-                    console.log('Write Characterstic was : ' + JSON.stringify(writeCharacteristic));
+		
+		    console.log('Write Characterstic was : ' + JSON.stringify(writeCharacteristic));
                     // this characterstic doesn't seem to be used for receiving data
                     characteristic.on('read', function(data, isNotification) {
                       console.log('Data received - writeCharacteristic', data);
@@ -91,46 +132,69 @@ var MAGIC_NUMBER_1 = "be15beef6186407e83810bd89c4d8df4"; //Discover
               ]);
             },
             function(error) {
-                console.log(error);
-            }); //async whilst end
+		console.log(error);
+            }
+          );
         });
       });
     });
   }
 
-
-config.read(process.argv[2], function(carId, startlane, mqttClient) {
-  if (!carId) {
-    console.log('Define carid in a properties file and pass in the name of the file as argv');
-    process.exit(0);
-  }
-    lane = startlane;
-    
-
-    noble.on('stateChange', function(state) {
-      if (state === 'poweredOn') {
-        noble.startScanning();
-        setTimeout(function() {
-          noble.stopScanning();
-        }, 20000);
-      }});
-
-  noble.on('discover', function(car) {
-    if (car.id === carId) {
-      var advertisement = car.advertisement;
-      var serviceUuids = JSON.stringify(car.advertisement.serviceUuids);
-      if(serviceUuids.indexOf(MAGIC_NUMBER_1) > -1) {
-        setUp(car);
-        noble.stopScanning();
-
-        var interval = setInterval(function(car) {
-          console.log(car);
-
-          }, 5000, car.state + ' ' + JSON.stringify(car.rssi));
-      }
-    }
+  mqttClient.on('error', function(err) {
+    console.error('MQTT client error ' + err);
+    mqttClient = null;
+  });
+  mqttClient.on('close', function() {
+    console.log('MQTT client closed');
+    mqttClient = null;
   });
 
+  mqttClient.on('message', function(topic, message, packet) {
+    var msg = JSON.parse(message.toString());
+    console.log('Message received from Bluemix');
+    
+    if (msg.d.action == '#s') {
+      var cmd = "s";
+      if (msg.d.speed) {
+        cmd = cmd + " " + msg.d.speed;
+        if (msg.d.accel) {
+          cmd = cmd + " " + msg.d.accel;
+        }
+      }
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#c') {
+      var cmd = "c";
+      if (msg.d.offset) {
+        cmd = cmd + " " + msg.d.offset;
+      }
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#q') {
+      var cmd = "q";
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#ping') {
+      var cmd = "ping";
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#ver') {
+      var cmd = "ver";
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#bat') {
+      var cmd = "bat";
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#l') {
+      var cmd = "l";
+      invokeCommand(cmd);
+    }
+    else if (msg.d.action == '#lp') {
+      var cmd = "lp";
+      invokeCommand(cmd);
+    }
+  });
 });
 
 function init(startlane) {

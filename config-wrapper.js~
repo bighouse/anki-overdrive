@@ -62,6 +62,7 @@ module.exports = function() {
           var org = cfg.apikey.split('-')[1];
           start(cfg.deviceid, cfg.apikey, cfg.authtoken, org + '.messaging.internetofthings.ibmcloud.com', '1883', cfg.carid, cfg.startlane, callback);
         } else {
+	console.log(JSON.stringify(cfg));
           callback(cfg.carid, cfg.startlane, null);
         }
       });	
