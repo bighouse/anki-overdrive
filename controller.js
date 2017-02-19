@@ -33,19 +33,25 @@ var MAGIC_NUMBER_1 = "be15beef6186407e83810bd89c4d8df4"; //Discover
 
 
   function setUp(peripheral) {
-/*
+
+    
+
     peripheral.on('disconnect', function(error) {
       console.log('Car has been disconnected');
       process.exit(0);
     });
-*/
+
+    /*peripheral.on('connect', function(error) {
+      console.log('Car has been connected');
+    });*/
+
 
     peripheral.connect(function(error) {
-      console.log('Whoah!')
+      console.log(peripheral);
       peripheral.discoverServices([], function(error, services) {
 
         var service = services[0];
-        console.log(service);
+        
         service.discoverCharacteristics([], function(error, characteristics) {
           var characteristicIndex = 0;
           console.log('charac' + JSON.stringify(characteristics));
@@ -108,12 +114,14 @@ config.read(process.argv[2], function(carId, startlane, mqttClient) {
     
 
     noble.on('stateChange', function(state) {
+      console.log(state);
       if (state === 'poweredOn') {
         noble.startScanning();
-        setTimeout(function() {
-          noble.stopScanning();
-        }, 20000);
-      }});
+        }
+      else {
+        noble.stopScanning();
+      }
+      });
 
   noble.on('discover', function(car) {
     if (car.id === carId) {
@@ -121,12 +129,11 @@ config.read(process.argv[2], function(carId, startlane, mqttClient) {
       var serviceUuids = JSON.stringify(car.advertisement.serviceUuids);
       if(serviceUuids.indexOf(MAGIC_NUMBER_1) > -1) {
         setUp(car);
-        noble.stopScanning();
 
         var interval = setInterval(function(car) {
           console.log(car);
-
           }, 5000, car.state + ' ' + JSON.stringify(car.rssi));
+
       }
     }
   });
